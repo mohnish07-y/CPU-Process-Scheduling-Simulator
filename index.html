@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CPU Scheduling Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root{--bg:#f1f4f6;--card:#fff;--ink:#17212b;--mut:#637083;--line:#d8dee5;--acc:#0f766e;--accfg:#fff;--best:#cdeee4;--err:#b42318}
+        @media(prefers-color-scheme:dark){:root{--bg:#0f151b;--card:#17202a;--ink:#e5eaf0;--mut:#8d99a9;--line:#2a3643;--acc:#3fc7b4;--accfg:#06241f;--best:#14463f;--err:#ff8a80}}
+        *{box-sizing:border-box}
+        body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+        main{max-width:1200px;margin:0 auto;padding:24px 16px 48px}
+        h1{font-size:26px;margin:0 0 4px;font-weight:600}
+        h2{font-size:16px;margin:0 0 10px;font-weight:600}
+        p.sub{margin:0 0 20px;color:var(--mut)}
+        .grid{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+        @media(max-width:860px){.grid{grid-template-columns:1fr}}
+        .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+        .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+        select,input,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+        button{cursor:pointer}
+        button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:500}
+        :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+        table{border-collapse:collapse;width:100%}
+        th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);font-size:14px;white-space:nowrap}
+        th{color:var(--mut);font-weight:500}
+        .scroll{overflow-x:auto}
+        #procs input{width:100%;min-width:52px;padding:4px 6px}
+        #procs td{padding:4px}
+        .x{border:0;color:var(--mut);padding:2px 8px}
+        .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line)}
+        .tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:8px 14px;color:var(--mut)}
+        .tabs button[aria-selected=true]{color:var(--ink);border-color:var(--acc);font-weight:600}
+        .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+        .metric{border:1px solid var(--line);border-radius:6px;padding:10px}
+        .metric b{display:block;font:500 22px "IBM Plex Mono",monospace}
+        .metric span{color:var(--mut);font-size:13px}
+        .rule{border-left:4px solid var(--acc);padding:6px 12px;background:var(--bg);margin:8px 0}
+        .gantt{display:flex;overflow-x:auto;padding-bottom:4px}
+        .seg div:first-child{color:#fff;text-align:center;padding:14px 0;font-weight:600;border-right:2px solid var(--card)}
+        .seg small{color:var(--mut);font-size:11px}
+        .chip{display:inline-block;margin:1px 3px 1px 0;padding:1px 8px;border:1px solid var(--line);border-radius:12px;font:500 12px "IBM Plex Mono",monospace}
+        .chip.first{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+        .best td{background:var(--best)}
+        .bar{height:10px;border-radius:3px;background:var(--acc);margin:2px 0}
+        .bar.t{background:#d98e04}
+        .err{color:var(--err);font-weight:500}
+        .hide{display:none}
+        code{font-family:"IBM Plex Mono",monospace;font-size:13px}
+    </style>
+</head>
+<body>
+    <main>
+        <h1>CPU Scheduling Simulator</h1>
+        <p class="sub">A min-heap priority queue picks the next process with a greedy rule. Lower priority number means higher priority. <b id="src"></b></p>
+        
+        <div class="grid">
+            <section class="card">
+                <h2>Processes</h2>
+                <div class="row" style="margin-bottom:10px">
+                    <select id="sample" aria-label="Sample data"></select>
+                    <button id="load">Load sample</button>
+                    <button id="rand">Random set</button>
+                </div>
+                <div class="scroll">
+                    <table id="procs">
+                        <thead>
+                            <tr>
+                                <th>PID</th>
+                                <th>Arrival</th>
+                                <th>Burst</th>
+                                <th>Priority</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="row" style="margin-top:10px">
+                    <button id="add">Add process</button>
+                </div>
+                <p id="err" class="err" role="alert"></p>
+            </section>
+            
+            <section>
+                <div class="tabs" role="tablist">
+                    <button role="tab" data-tab="sim" aria-selected="true">Simulation</button>
+                    <button role="tab" data-tab="cmp" aria-selected="false">Performance comparison</button>
+                    <button role="tab" data-tab="how" aria-selected="false">How it works</button>
+                </div>
+                
+                <div id="sim" class="card">
+                    <div class="row">
+                        <label for="algo">Algorithm</label>
+                        <select id="algo"></select>
+                    </div>
+                    <div id="rule" class="rule"></div>
+                    <div id="metrics" class="metrics"></div>
+                    <h2>Gantt chart</h2>
+                    <div id="gantt" class="gantt"></div>
+                    <p><b>Execution order:</b> <span id="order"></span></p>
+                    <h2>Per-process results</h2>
+                    <div class="scroll" id="results"></div>
+                    <p class="sub">Turnaround = Completion − Arrival. Waiting = Turnaround − Burst. Response = First start − Arrival.</p>
+                    <h2>Scheduler decision log</h2>
+                    <div class="scroll" id="log"></div>
+                </div>
+                
+                <div id="cmp" class="card hide">
+                    <div class="scroll" id="cmptable"></div>
+                    <p id="winner"></p>
+                    <div id="bars"></div>
+                </div>
+                
+                <div id="how" class="card hide">
+                    <p><b>Data structure.</b> The ready queue is a binary min-heap written from scratch in this file. Each entry is an array <code>[criterion, tie-breakers…, pid]</code>, so the smallest entry is always the most urgent process.</p>
+                    <p><b>Greedy strategy.</b> At every scheduling point the CPU takes the best local choice, the heap minimum, without looking ahead. The algorithms differ only in the key: FCFS uses arrival time, SJF uses burst time, SRTF uses remaining time, Priority uses the priority number.</p>
+                    <p><b>Preemption.</b> A running process executes until it finishes or the next process arrives. If it is unfinished it goes back into the heap, so the heap re-decides on every arrival.</p>
+                    <p><b>Complexity.</b> There are at most 2n scheduling events and each heap operation costs O(log n), so the total is O(n log n) time and O(n) space.</p>
+                    <p><b>Trade-offs.</b> SRTF gives the lowest average waiting time. Priority scheduling favours important work but can starve low-priority processes; aging is the usual fix.</p>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        /* Priority Queue: Binary Min-Heap */
+        class MinHeap {
+            constructor() { this.a = []; }
+            static less(x, y) {
+                for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i];
+                return false;
+            }
+            size() { return this.a.length; }
+            push(v) {
+                const a = this.a; a.push(v);
+                let i = a.length - 1;
+                while (i > 0) {
+                    const p = (i - 1) >> 1;
+                    if (!MinHeap.less(a[i], a[p])) break;
+                    [a[i], a[p]] = [a[p], a[i]]; i = p;
+                }
+            }
+            pop() {
+                const a = this.a, top = a[0], last = a.pop();
+                if (a.length) {
+                    a[0] = last; let i = 0;
+                    for (;;) {
+                        let l = 2 * i + 1, r = l + 1, m = i;
+                        if (l < a.length && MinHeap.less(a[l], a[m])) m = l;
+                        if (r < a.length && MinHeap.less(a[r], a[m])) m = r;
+                        if (m === i) break;
+                        [a[i], a[m]] = [a[m], a[i]]; i = m;
+                    }
+                }
+                return top;
+            }
+            sorted() { return [...this.a].sort((x, y) => MinHeap.less(x, y) ? -1 : 1); }
+        }
+
+        const ALGOS = {
+            "FCFS": { key: (p, r) => [p.arrival, p.pid], pre: false, metric: "arrival", rule: "Pick the process that arrived earliest." },
+            "SJF (non-preemptive)": { key: (p, r) => [p.burst, p.arrival, p.pid], pre: false, metric: "burst", rule: "Pick the ready process with the shortest burst time." },
+            "SRTF (preemptive SJF)": { key: (p, r) => [r, p.arrival, p.pid], pre: true, metric: "remaining", rule: "Pick the ready process with the least remaining time. A new arrival may preempt." },
+            "Priority (non-preemptive)": { key: (p, r) => [p.priority, p.arrival, p.pid], pre: false, metric: "priority", rule: "Pick the ready process with the lowest priority number." },
+            "Priority (preemptive)": { key: (p, r) => [p.priority, p.arrival, p.pid], pre: true, metric: "priority", rule: "Like Priority, but a higher-priority arrival preempts the running process." }
+        };
+
+        function addSeg(tl, pid, s, e) {
+            const l = tl[tl.length - 1];
+            if (l && l.pid === pid && l.e === s) l.e = e; else tl.push({ pid, s, e });
+        }
+
+        function schedule(procs, algo) {
+            const ps = [...procs].sort((x, y) => x.arrival - y.arrival || (x.pid < y.pid ? -1 : 1));
+            const by = {}, rem = {};
+            ps.forEach(p => { by[p.pid] = p; rem[p.pid] = p.burst; });
+            const h = new MinHeap(), n = ps.length;
+            let t = 0, i = 0, last = null;
+            const tl = [], log = [], fin = {}, first = {};
+
+            while (Object.keys(fin).length < n) {
+                while (i < n && ps[i].arrival <= t) { h.push(algo.key(ps[i], rem[ps[i].pid])); i++; }
+                if (!h.size()) { addSeg(tl, "IDLE", t, ps[i].arrival); t = ps[i].arrival; last = null; continue; }
+
+                const queue = h.sorted().map(k => ({ pid: k[k.length - 1], v: k[0] }));
+                const top = h.pop(), pid = top[top.length - 1];
+                if (pid !== last) log.push({ t, queue, pid, why: `smallest ${algo.metric} = ${top[0]}` });
+                if (first[pid] === undefined) first[pid] = t;
+
+                let run = rem[pid];
+                if (algo.pre && i < n) run = Math.min(run, ps[i].arrival - t);
+                addSeg(tl, pid, t, t + run);
+                t += run; rem[pid] -= run; last = pid;
+                if (rem[pid]) h.push(algo.key(by[pid], rem[pid])); else fin[pid] = t;
+            }
+
+            const rows = ps.map(p => {
+                const ct = fin[p.pid], tat = ct - p.arrival;
+                return { ...p, first: first[p.pid], ct, tat, wt: tat - p.burst, rt: first[p.pid] - p.arrival };
+            });
+            const avg = k => rows.reduce((s, r) => s + r[k], 0) / n;
+            const span = tl[tl.length - 1].e;
+            const busy = tl.filter(s => s.pid !== "IDLE").reduce((s, x) => s + x.e - x.s, 0);
+            let sw = 0;
+            for (let j = 1; j < tl.length; j++) if (tl[j].pid !== "IDLE" && tl[j - 1].pid !== "IDLE") sw++;
+            return { tl, log, rows, sum: { wt: avg("wt"), tat: avg("tat"), rt: avg("rt"), util: 100 * busy / span, sw } };
+        }
+
+        const SAMPLES = {
+            "Classic (5 processes)": [["P1",0,8,3],["P2",1,4,1],["P3",2,9,4],["P4",3,5,2],["P5",4,2,5]],
+            "All arrive at t=0": [["P1",0,6,2],["P2",0,8,1],["P3",0,7,3],["P4",0,3,4]],
+            "With CPU idle gap": [["P1",0,3,2],["P2",10,4,1],["P3",11,2,3]]
+        };
+        const COLORS = ["#4C78A8","#E08A1E","#3E9B5A","#D6504F","#5BA8A0","#9A6BB0","#8C6A4F","#B8962E","#D9738A","#5F63C9"];
+        const $ = id => document.getElementById(id);
+        const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+        const f2 = x => typeof x === "number" ? x.toFixed(2) : "0.00";
+
+        function setRows(rows) {
+            $("procs").tBodies[0].innerHTML = rows.map(r => 
+                `<tr><td><input value="${esc(r[0])}" aria-label="PID"></td>` +
+                [1, 2, 3].map(k => `<td><input type="number" min="${k === 2 ? 1 : 0}" step="1" value="${r[k]}"></td>`).join("") +
+                `<td><button class="x" title="Remove" aria-label="Remove process">×</button></td></tr>`).join("");
+            render();
+        }
+
+        function readRows() {
+            const out = [];
+            for (const tr of $("procs").tBodies[0].rows) {
+                const v = [...tr.querySelectorAll("input")].map(i => i.value.trim());
+                if (v.every(x => x === "")) continue;
+                const nums = v.slice(1).map(Number);
+                if (!v[0] || v.slice(1).some((x, i) => x === "" || !Number.isInteger(nums[i]))) return { error: "Each row needs a PID and whole numbers for Arrival, Burst and Priority." };
+                out.push({ pid: v[0], arrival: nums[0], burst: nums[1], priority: nums[2] });
+            }
+            if (!out.length) return { error: "Add at least one process." };
+            if (new Set(out.map(p => p.pid)).size !== out.length) return { error: "PIDs must be unique." };
+            if (out.some(p => p.burst < 1 || p.arrival < 0)) return { error: "Burst must be at least 1 and Arrival cannot be negative." };
+            return { procs: out };
+        }
+
+        function table(head, rows) {
+            return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+        }
+
+        let seq = 0;
+        async function render() {
+            const mine = ++seq;
+            const inp = readRows();
+            $("err").textContent = inp.error || "";
+            if (inp.error) return;
+
+            const procs = inp.procs, pids = procs.map(p => p.pid).sort();
+            const color = p => p === "IDLE" ? "#9aa3ad" : COLORS[pids.indexOf(p) % COLORS.length];
+
+            const all = {};
+            Object.keys(ALGOS).forEach(k => {
+                all[k] = schedule(procs, ALGOS[k]);
+            });
+
+            if (mine !== seq) return;
+
+            const name = ($("algo") && $("algo").value) ? $("algo").value : "FCFS";
+            const r = all[name];
+            if (!r) return;
+            const s = r.sum;
+
+            /* Render Simulation Tab */
+            $("rule").innerHTML = `<b>Greedy rule:</b> ${esc(ALGOS[name].rule)}`;
+            $("metrics").innerHTML = [
+                ["Avg waiting time", f2(s.wt)], 
+                ["Avg turnaround time", f2(s.tat)], 
+                ["Avg response time", f2(s.rt)],
+                ["CPU utilisation", s.util.toFixed(1) + "%"], 
+                ["Context switches", s.sw]
+            ].map(m => `<div class="metric"><b>${m[1]}</b><span>${m[0]}</span></div>`).join("");
+
+            $("gantt").innerHTML = r.tl.map(x => `<div class="seg" style="flex:${x.e - x.s};min-width:34px"><div style="background:${color(x.pid)}">${esc(x.pid)}</div><small>${x.s}</small></div>`).join("") +
+                `<small style="padding-left:4px;color:var(--mut)">${r.tl[r.tl.length - 1].e}</small>`;
+            $("order").textContent = r.tl.filter(x => x.pid !== "IDLE").map(x => x.pid).join(" → ");
+            $("results").innerHTML = table(["PID", "Arrival", "Burst", "Priority", "First start", "Completion", "Waiting", "Turnaround", "Response"],
+                r.rows.map(x => `<tr><td>${esc(x.pid)}</td><td>${x.arrival}</td><td>${x.burst}</td><td>${x.priority}</td><td>${x.first}</td><td>${x.ct}</td><td>${x.wt}</td><td>${x.tat}</td><td>${x.rt}</td></tr>`).join(""));
+            $("log").innerHTML = table(["Time", "Ready queue (best first)", "Selected", "Why"],
+                r.log.map(l => `<tr><td>${l.t}</td><td>${l.queue.map((q, i) => `<span class="chip${i ? "" : " first"}">${esc(q.pid)}${q.v}</span>`).join("")}</td><td>${esc(l.pid)}</td><td>${esc(l.why)}</td></tr>`).join(""));
+
+            /* Render Comparison Tab */
+            const names = Object.keys(all), minWT = Math.min(...names.map(k => all[k].sum.wt));
+            const maxV = Math.max(...names.map(k => Math.max(all[k].sum.wt, all[k].sum.tat))) || 1;
+            $("cmptable").innerHTML = table(["Algorithm", "Avg waiting", "Avg turnaround", "Avg response", "CPU util %", "Switches"],
+                names.map(k => { const x = all[k].sum; return `<tr class="${x.wt === minWT ? "best" : ""}"><td>${k}</td><td>${f2(x.wt)}</td><td>${f2(x.tat)}</td><td>${f2(x.rt)}</td><td>${x.util.toFixed(1)}</td><td>${x.sw}</td></tr>`; }).join(""));
+            $("winner").innerHTML = `Lowest average waiting time: <b>${names.filter(k => all[k].sum.wt === minWT).join(", ")}</b> (${f2(minWT)}). SRTF is provably optimal for average waiting and turnaround time.`;
+            $("bars").innerHTML = `<p class="sub">Average waiting (teal) and turnaround (amber)</p>` + names.map(k => {
+                const x = all[k].sum;
+                return `<div style="margin-bottom:10px"><b>${k}</b><div class="bar" style="width:${100 * x.wt / maxV}%"></div><div class="bar t" style="width:${100 * x.tat / maxV}%"></div></div>`;
+            }).join("");
+        }
+
+        /* Populate Dropdowns BEFORE Initial Render */
+        Object.keys(SAMPLES).forEach(k => $("sample").add(new Option(k, k)));
+        Object.keys(ALGOS).forEach(k => $("algo").add(new Option(k, k)));
+
+        /* Attach Event Handlers */
+        $("load").onclick = () => setRows(SAMPLES[$("sample").value]);
+        $("rand").onclick = () => {
+            const n = 4 + Math.floor(Math.random() * 4), R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+            setRows(Array.from({ length: n }, (_, i) => ["P" + (i + 1), R(0, 8), R(1, 10), R(1, 5)]));
+        };
+        $("add").onclick = () => {
+            const rows = [...$("procs").tBodies[0].rows].map(tr => [...tr.querySelectorAll("input")].map(i => i.value));
+            setRows([...rows, ["P" + (rows.length + 1), 0, 1, 1]]);
+        };
+        $("procs").addEventListener("input", render);
+        $("procs").addEventListener("click", e => { 
+            if (e.target.classList.contains("x")) { 
+                e.target.closest("tr").remove(); 
+                render(); 
+            } 
+        });
+        $("algo").onchange = render;
+
+        /* Tab Navigation Handler */
+        document.querySelectorAll(".tabs button").forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b === btn));
+                const selectedTab = btn.dataset.tab;
+                ["sim", "cmp", "how"].forEach(id => {
+                    const el = $(id);
+                    if (el) el.classList.toggle("hide", id !== selectedTab);
+                });
+            };
+        });
+
+        /* Initial Render AFTER dropdowns and event listeners are ready */
+        setRows(SAMPLES["Classic (5 processes)"]);
+    </script>
+</body>
+</html>
